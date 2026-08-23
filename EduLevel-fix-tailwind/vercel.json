@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/tests/:path*",
-      "destination": "/index.html"
-    }
-  ]
-}
