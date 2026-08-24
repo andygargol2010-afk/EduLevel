@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, lazy, Suspense, memo } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense, memo, useRef } from "react";
 import { type AuthUser, subscribeToAuth, signInWithGoogle, signOutFromGoogle } from "./firebase";
 import Article, { articles as articleContent } from "./pages/Article";
 
@@ -13,7 +13,18 @@ type Subject = "matematicas" | "historia" | "gramatica" | "geografia" | "fisica"
 type Level = "basico" | "intermedio" | "avanzado";
 type View = "home" | "quiz";
 
-const siteUrl = "https://design-edulevel-learning-platform.vercel.app";
+const SUBJECTS = [
+  "matematicas",
+  "historia",
+  "gramatica",
+  "geografia",
+  "fisica",
+  "quimica",
+] as const satisfies readonly Subject[];
+
+const LEVEL_KEYS = ["basico", "intermedio", "avanzado"] as const satisfies readonly Level[];
+
+const siteUrl = "https://edulvl.com";
 
 const levelLabels: Record<Level, string> = {
   basico: "Básico",
@@ -32,12 +43,14 @@ function testPath(subject: Subject, level: Level) {
 }
 
 function setPageMetadata(subject: Subject | null, level: Level | null) {
-  const title = subject && level
-    ? `${subjectConfig[subject].label}: test de nivel ${levelLabels[level]} | EduLevel`
-    : "EduLevel — Tests y simulacros educativos";
-  const description = subject && level
-    ? `Practica ${subjectConfig[subject].label} con un test interactivo de nivel ${levelLabels[level]}. Revisa tus respuestas al finalizar.`
-    : "Tests interactivos para practicar Matemáticas, Historia y Lengua y Gramática por nivel.";
+  const title =
+    subject && level
+      ? `${subjectConfig[subject].label}: test de nivel ${levelLabels[level]} | EduLevel`
+      : "EduLevel — Tests y simulacros educativos";
+  const description =
+    subject && level
+      ? `Practica ${subjectConfig[subject].label} con un test interactivo de nivel ${levelLabels[level]}. Revisa tus respuestas al finalizar.`
+      : "Tests interactivos para practicar Matemáticas, Historia, Lengua y Gramática, Geografía, Física y Química por nivel.";
   const canonical = `${siteUrl}${subject && level ? testPath(subject, level) : "/"}`;
 
   document.title = title;
@@ -52,39 +65,41 @@ function setPageMetadata(subject: Subject | null, level: Level | null) {
   update('meta[property="og:url"]', canonical);
   update('link[rel="canonical"]', canonical);
 
-  const schema = subject && level
-    ? {
-        "@context": "https://schema.org",
-        "@graph": [
-          {
-            "@type": "Quiz",
-            name: title,
-            description,
-            url: canonical,
-            inLanguage: "es",
-            educationalLevel: levelLabels[level],
-            about: subjectConfig[subject].label,
-          },
-          {
-            "@type": "BreadcrumbList",
-            itemListElement: [
-              { "@type": "ListItem", position: 1, name: "EduLevel", item: `${siteUrl}/` },
-              { "@type": "ListItem", position: 2, name: subjectConfig[subject].label, item: canonical },
-              { "@type": "ListItem", position: 3, name: `Nivel ${levelLabels[level]}`, item: canonical },
-            ],
-          },
-        ],
-      }
-    : {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        name: "EduLevel",
-        url: canonical,
-        description,
-        applicationCategory: "Education",
-        operatingSystem: "All",
-        inLanguage: "es",
-      };
+  const schema =
+    subject && level
+      ? {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Quiz",
+              name: title,
+              description,
+              url: canonical,
+              inLanguage: "es",
+              educationalLevel: levelLabels[level],
+              about: subjectConfig[subject].label,
+            },
+            {
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                { "@type": "ListItem", position: 1, name: "EduLevel", item: `${siteUrl}/` },
+                { "@type": "ListItem", position: 2, name: subjectConfig[subject].label, item: canonical },
+                { "@type": "ListItem", position: 3, name: `Nivel ${levelLabels[level]}`, item: canonical },
+              ],
+            },
+          ],
+        }
+      : {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          name: "EduLevel",
+          url: canonical,
+          description,
+          applicationCategory: "Education",
+          operatingSystem: "All",
+          inLanguage: "es",
+        };
+
   document.getElementById("seo-jsonld")?.remove();
   const script = document.createElement("script");
   script.id = "seo-jsonld";
@@ -242,18 +257,33 @@ const quizData: Record<Subject, Record<Level, QuizQuestion[]>> = {
     ],
   },
 };
+
+// ─── Stats derived from quizData (single source of truth) ─────────────────────
+
+const totalSubjectCount = SUBJECTS.length;
+const totalTestCount = SUBJECTS.reduce(
+  (acc, s) => acc + LEVEL_KEYS.filter((lv) => quizData[s][lv].length > 0).length,
+  0,
+);
+const totalQuestionCount = SUBJECTS.reduce(
+  (acc, s) => acc + LEVEL_KEYS.reduce((a, lv) => a + quizData[s][lv].length, 0),
+  0,
+);
+
 // ─── AdSense Slot ─────────────────────────────────────────────────────────────
 
 function AdSlot({ w, h, label, sticky }: { w: number; h: number; label: string; sticky?: boolean }) {
   return (
-    <div className={`flex justify-center ${sticky ? "" : "my-4 py-2"}`}>
+    <div className={`flex justify-center ${sticky ? "" : "my-4 py-2"}`} aria-hidden="true">
       <div
         className={`flex items-center justify-center rounded-lg border-2 border-dashed border-slate-400 bg-slate-100 ${sticky ? "sticky top-24" : ""}`}
         style={{ width: w, maxWidth: "100%", height: h }}
       >
         <div className="text-center px-4">
           <span className="block text-xs font-bold text-slate-500 uppercase tracking-widest">{label}</span>
-          <span className="block text-xs text-slate-400 mt-1">{w} × {h}</span>
+          <span className="block text-xs text-slate-400 mt-1">
+            {w} × {h}
+          </span>
         </div>
       </div>
     </div>
@@ -265,7 +295,6 @@ const AdSlotLeaderboard = () => (
     <AdSlot w={728} h={90} label="Anuncio superior" />
   </div>
 );
-const AdSlotInQuiz = () => <AdSlot w={336} h={280} label="Anuncio dentro del test" />;
 const AdSlotContent = () => <AdSlot w={728} h={90} label="Anuncio de contenido" />;
 const AdSlotSkyscraper = () => <AdSlot w={300} h={600} label="Anuncio lateral" sticky />;
 
@@ -278,10 +307,8 @@ const subjectConfig = {
     color: "#0F9D74",
     lightBg: "#E8FBF4",
     borderColor: "#7BE0BE",
-    badgeClass: "bg-emerald-100 text-emerald-700",
-    accent: "emerald",
     desc: "Álgebra, Geometría, Cálculo y más",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
   historia: {
     label: "Historia",
@@ -289,10 +316,8 @@ const subjectConfig = {
     color: "#D9852A",
     lightBg: "#FEF6EA",
     borderColor: "#F3C583",
-    badgeClass: "bg-amber-100 text-amber-700",
-    accent: "amber",
     desc: "Historia Universal, Civilizaciones y Política",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
   gramatica: {
     label: "Lengua y Gramática",
@@ -300,10 +325,8 @@ const subjectConfig = {
     color: "#6D3FD1",
     lightBg: "#F4F0FE",
     borderColor: "#C6B1F2",
-    badgeClass: "bg-violet-100 text-violet-700",
-    accent: "violet",
     desc: "Ortografía, Sintaxis, Literatura y Redacción",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
   geografia: {
     label: "Geografía",
@@ -311,10 +334,8 @@ const subjectConfig = {
     color: "#0891B2",
     lightBg: "#ECFEFF",
     borderColor: "#67E8F9",
-    badgeClass: "bg-cyan-100 text-cyan-700",
-    accent: "cyan",
     desc: "Relieve, clima, población y geografía física",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
   fisica: {
     label: "Física",
@@ -322,10 +343,8 @@ const subjectConfig = {
     color: "#DB2777",
     lightBg: "#FDF2F8",
     borderColor: "#F9A8D4",
-    badgeClass: "bg-pink-100 text-pink-700",
-    accent: "pink",
     desc: "Movimiento, fuerzas, energía y electricidad",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
   quimica: {
     label: "Química",
@@ -333,10 +352,8 @@ const subjectConfig = {
     color: "#EA580C",
     lightBg: "#FFF7ED",
     borderColor: "#FDBA74",
-    badgeClass: "bg-orange-100 text-orange-700",
-    accent: "orange",
     desc: "Materia, reacciones, enlaces y compuestos",
-    tests: 3,
+    tests: LEVEL_KEYS.length,
   },
 } as const;
 
@@ -352,32 +369,57 @@ interface FormulaSheet {
 const formulaSheets: FormulaSheet[] = [
   {
     title: "Fórmulas esenciales de Álgebra",
-    subject: "Matemáticas", color: "#0F9D74", bg: "#E8FBF4", icon: "📐",
-    items: ["Fórmula cuadrática: x = (−b ± √(b²−4ac)) / 2a", "Diferencia de cuadrados: a²−b² = (a+b)(a−b)", "Binomio de Newton: (a+b)ⁿ = Σ C(n,k)·aᵏ·bⁿ⁻ᵏ", "Logaritmos: logₐ(xy) = logₐx + logₐy"],
+    subject: "Matemáticas",
+    color: "#0F9D74",
+    bg: "#E8FBF4",
+    icon: "📐",
+    items: [
+      "Fórmula cuadrática: x = (−b ± √(b²−4ac)) / 2a",
+      "Diferencia de cuadrados: a²−b² = (a+b)(a−b)",
+      "Binomio de Newton: (a+b)ⁿ = Σ C(n,k)·aᵏ·bⁿ⁻ᵏ",
+      "Logaritmos: logₐ(xy) = logₐx + logₐy",
+    ],
   },
   {
     title: "Cronología — Historia Moderna",
-    subject: "Historia", color: "#D9852A", bg: "#FEF6EA", icon: "🏛️",
-    items: ["1492 — Descubrimiento de América", "1517 — Reforma Protestante de Lutero", "1789 — Revolución Francesa", "1848 — Primavera de los Pueblos"],
+    subject: "Historia",
+    color: "#D9852A",
+    bg: "#FEF6EA",
+    icon: "🏛️",
+    items: [
+      "1492 — Descubrimiento de América",
+      "1517 — Reforma Protestante de Lutero",
+      "1789 — Revolución Francesa",
+      "1848 — Primavera de los Pueblos",
+    ],
   },
   {
     title: "Figuras Retóricas Clave",
-    subject: "Gramática", color: "#6D3FD1", bg: "#F4F0FE", icon: "📝",
-    items: ["Metáfora: comparación sin 'como'", "Hipérbole: exageración expresiva", "Anáfora: repetición al inicio del verso", "Ironía: decir lo contrario de lo que se piensa"],
+    subject: "Gramática",
+    color: "#6D3FD1",
+    bg: "#F4F0FE",
+    icon: "📝",
+    items: [
+      "Metáfora: comparación sin 'como'",
+      "Hipérbole: exageración expresiva",
+      "Anáfora: repetición al inicio del verso",
+      "Ironía: decir lo contrario de lo que se piensa",
+    ],
   },
   {
     title: "Geometría Analítica",
-    subject: "Matemáticas", color: "#0F9D74", bg: "#E8FBF4", icon: "📐",
-    items: ["Distancia entre puntos: d = √[(x₂−x₁)²+(y₂−y₁)²]", "Punto medio: M = ((x₁+x₂)/2, (y₁+y₂)/2)", "Pendiente: m = (y₂−y₁)/(x₂−x₁)", "Ecuación recta: y − y₁ = m(x − x₁)"],
+    subject: "Matemáticas",
+    color: "#0F9D74",
+    bg: "#E8FBF4",
+    icon: "📐",
+    items: [
+      "Distancia entre puntos: d = √[(x₂−x₁)²+(y₂−y₁)²]",
+      "Punto medio: M = ((x₁+x₂)/2, (y₁+y₂)/2)",
+      "Pendiente: m = (y₂−y₁)/(x₂−x₁)",
+      "Ecuación recta: y − y₁ = m(x − x₁)",
+    ],
   },
 ];
-
-const homeStats = [
-  { value: "18", label: "Tests disponibles" },
-  { value: "90", label: "Preguntas únicas" },
-  { value: "6", label: "Materias" },
-  { value: "Gratis", label: "Para empezar" },
-] as const;
 
 const learningCards = [
   { title: "Repasa conceptos clave", text: "Refuerza teoría, fórmulas y ejercicios esenciales antes de cada prueba." },
@@ -398,9 +440,18 @@ const guideCards = [
 ] as const;
 
 const faqItems = [
-  { q: "¿Cuánto tiempo debo dedicar a estudiar cada día?", a: "Lo ideal es combinar 20 a 40 minutos de práctica concentrada con repaso de conceptos básicos y un test corto para consolidar." },
-  { q: "¿Qué materia tiene más peso en los exámenes?", a: "Depende del tipo de prueba, pero en la mayoría de casos una buena base en matemáticas, lenguaje y comprensión lectora suele marcar una gran diferencia." },
-  { q: "¿Cómo mejorar en simulacros?", a: "Haz simulacros en condiciones reales, revisa errores, identifica patrones y repite los temas que te cuestan para avanzar sin frustrarte." },
+  {
+    q: "¿Cuánto tiempo debo dedicar a estudiar cada día?",
+    a: "Lo ideal es combinar 20 a 40 minutos de práctica concentrada con repaso de conceptos básicos y un test corto para consolidar.",
+  },
+  {
+    q: "¿Qué materia tiene más peso en los exámenes?",
+    a: "Depende del tipo de prueba, pero en la mayoría de casos una buena base en matemáticas, lenguaje y comprensión lectora suele marcar una gran diferencia.",
+  },
+  {
+    q: "¿Cómo mejorar en simulacros?",
+    a: "Haz simulacros en condiciones reales, revisa errores, identifica patrones y repite los temas que te cuestan para avanzar sin frustrarte.",
+  },
 ] as const;
 
 const retentionCards = [
@@ -416,22 +467,147 @@ const LEVELS: { key: Level; label: string; desc: string; icon: string }[] = [
 ];
 
 const STUDY_GUIDES = [
-  { key: "matematicas" as Subject, subject: "Matemáticas", icon: "📐", color: "#0F9D74", bg: "#E8FBF4", border: "#7BE0BE", weeks: 8, topics: ["Álgebra básica", "Funciones", "Trigonometría", "Cálculo diferencial", "Estadística"] },
-  { key: "historia" as Subject, subject: "Historia", icon: "🏛️", color: "#D9852A", bg: "#FEF6EA", border: "#F3C583", weeks: 6, topics: ["Prehistoria y Edad Antigua", "Edad Media", "Renacimiento y Modernidad", "Revolución Industrial", "Historia Contemporánea"] },
-  { key: "gramatica" as Subject, subject: "Gramática", icon: "📝", color: "#6D3FD1", bg: "#F4F0FE", border: "#C6B1F2", weeks: 5, topics: ["Morfología y Sintaxis", "Ortografía y Puntuación", "Tipos de texto", "Literatura española", "Comentario crítico"] },
+  {
+    key: "matematicas" as Subject,
+    subject: "Matemáticas",
+    icon: "📐",
+    color: "#0F9D74",
+    bg: "#E8FBF4",
+    border: "#7BE0BE",
+    weeks: 8,
+    topics: ["Álgebra básica", "Funciones", "Trigonometría", "Cálculo diferencial", "Estadística"],
+  },
+  {
+    key: "historia" as Subject,
+    subject: "Historia",
+    icon: "🏛️",
+    color: "#D9852A",
+    bg: "#FEF6EA",
+    border: "#F3C583",
+    weeks: 6,
+    topics: ["Prehistoria y Edad Antigua", "Edad Media", "Renacimiento y Modernidad", "Revolución Industrial", "Historia Contemporánea"],
+  },
+  {
+    key: "gramatica" as Subject,
+    subject: "Gramática",
+    icon: "📝",
+    color: "#6D3FD1",
+    bg: "#F4F0FE",
+    border: "#C6B1F2",
+    weeks: 5,
+    topics: ["Morfología y Sintaxis", "Ortografía y Puntuación", "Tipos de texto", "Literatura española", "Comentario crítico"],
+  },
 ];
 
-// ─── Shared Modal Shell ───────────────────────────────────────────────────────
+const TABS: { key: Tab; label: string }[] = [
+  { key: "inicio", label: "Inicio" },
+  { key: "simulacros", label: "Simulacros" },
+  { key: "formulas", label: "Fórmulas" },
+  { key: "guias", label: "Guías" },
+];
 
-function ModalShell({ onClose, children, maxW = "max-w-md" }: { onClose: () => void; children: React.ReactNode; maxW?: string }) {
+const SUBJECT_LABELS_LIST = SUBJECTS.map((s) => subjectConfig[s].label).join(", ");
+
+// ─── Progress helpers ─────────────────────────────────────────────────────────
+
+interface SavedProgressEntry {
+  score: number;
+  total: number;
+  pct: number;
+  savedAt?: string;
+}
+
+function readProgress(): Record<string, SavedProgressEntry> {
+  try {
+    const raw = window.localStorage.getItem("edulevel:progress");
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeProgress(data: Record<string, SavedProgressEntry>) {
+  try {
+    window.localStorage.setItem("edulevel:progress", JSON.stringify(data));
+  } catch (e) {
+    console.error("No se pudo guardar el progreso", e);
+  }
+}
+
+// ─── Shared UI pieces ─────────────────────────────────────────────────────────
+
+function ModalShell({
+  onClose,
+  children,
+  maxW = "max-w-md",
+  labelledBy,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+  maxW?: string;
+  labelledBy?: string;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={labelledBy}
     >
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxW} overflow-hidden`}>{children}</div>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className={`bg-white rounded-2xl shadow-2xl w-full ${maxW} overflow-hidden outline-none`}
+      >
+        {children}
+      </div>
     </div>
+  );
+}
+
+function Breadcrumb({
+  items,
+}: {
+  items: { label: string; onClick?: () => void; current?: boolean }[];
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-500">
+      <ol className="flex flex-wrap items-center gap-2">
+        {items.map((item, i) => (
+          <li key={item.label} className="flex items-center gap-2">
+            {i > 0 && <span aria-hidden="true">/</span>}
+            {item.onClick && !item.current ? (
+              <button type="button" onClick={item.onClick} className="text-blue-600 hover:text-blue-800 font-medium">
+                {item.label}
+              </button>
+            ) : (
+              <span aria-current={item.current ? "page" : undefined} className={item.current ? "text-slate-700 font-medium" : ""}>
+                {item.label}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -451,25 +627,37 @@ const LoginModal = memo(function LoginModal({
   const [mode, setMode] = useState<"login" | "register">("login");
 
   return (
-    <ModalShell onClose={onClose}>
+    <ModalShell onClose={onClose} labelledBy="login-title">
       <div className="px-8 pt-8 pb-6 border-b border-slate-100">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-white text-sm font-display font-black">E</span>
             </div>
-            <span className="font-bold text-slate-800">EduLevel</span>
+            <span id="login-title" className="font-bold text-slate-800">
+              EduLevel
+            </span>
           </div>
-          <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
             ✕
           </button>
         </div>
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-lg" role="tablist">
           {(["login", "register"] as const).map((m) => (
             <button
               key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
               onClick={() => setMode(m)}
-              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${mode === m ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${
+                mode === m ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
             >
               {m === "login" ? "Iniciar Sesión" : "Crear Cuenta"}
             </button>
@@ -479,12 +667,17 @@ const LoginModal = memo(function LoginModal({
 
       <div className="px-8 py-6">
         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700 mb-5">
-          {mode === "login" ? "Accedé con tu cuenta de Google para continuar." : "Creá tu cuenta con Google y empezá a estudiar en segundos."}
+          {mode === "login"
+            ? "Accedé con tu cuenta de Google para continuar."
+            : "Creá tu cuenta con Google y empezá a estudiar en segundos."}
         </div>
         {authError && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{authError}</div>
+          <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {authError}
+          </div>
         )}
         <button
+          type="button"
           onClick={onGoogleLogin}
           disabled={isLoading}
           className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold py-3 rounded-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
@@ -498,12 +691,21 @@ const LoginModal = memo(function LoginModal({
           {isLoading ? "Conectando..." : mode === "login" ? "Continuar con Google" : "Crear cuenta con Google"}
         </button>
         <div className="mt-4 text-center text-xs text-slate-500">
-          Al continuar aceptás nuestros <a href="#/terms" className="text-blue-600 font-semibold">Términos</a> y la <a href="#/privacy" className="text-blue-600 font-semibold">Política de Privacidad</a>.
+          Al continuar aceptás nuestros{" "}
+          <a href="#/terms" className="text-blue-600 font-semibold">
+            Términos
+          </a>{" "}
+          y la{" "}
+          <a href="#/privacy" className="text-blue-600 font-semibold">
+            Política de Privacidad
+          </a>
+          .
         </div>
       </div>
     </ModalShell>
   );
 });
+
 // ─── Quiz View ────────────────────────────────────────────────────────────────
 
 const QuizView = memo(function QuizView({
@@ -520,48 +722,66 @@ const QuizView = memo(function QuizView({
   const config = subjectConfig[subject];
   const questions = quizData[subject][level];
   const levelLabel = levelFullLabels[level];
-  const optionLetters = ["A", "B", "C", "D"];
+  const optionLetters = ["A", "B", "C", "D"] as const;
+  const total = questions.length;
 
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
-  const [answered, setAnswered] = useState<boolean[]>(() => new Array(questions.length).fill(false));
+  const [answered, setAnswered] = useState<boolean[]>(() => new Array(total).fill(false));
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [progressSaved, setProgressSaved] = useState(false);
 
-  const q = questions[current];
-  const isAnswered = answered[current];
+  // Reset internal state when subject/level changes
+  useEffect(() => {
+    setCurrent(0);
+    setSelected(null);
+    setAnswered(new Array(total).fill(false));
+    setScore(0);
+    setShowResult(false);
+    setProgressSaved(false);
+  }, [subject, level, total]);
+
+  if (total === 0) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4">
+        <p className="text-slate-600">No hay preguntas disponibles para este test.</p>
+        <button type="button" onClick={onBack} className="px-6 py-3 rounded-xl font-semibold text-white" style={{ background: config.color }}>
+          Volver al inicio
+        </button>
+      </div>
+    );
+  }
+
+  const safeCurrent = Math.min(current, total - 1);
+  const q = questions[safeCurrent];
+  const isAnswered = answered[safeCurrent];
   const answeredCount = answered.filter(Boolean).length;
 
   const handleSaveProgress = useCallback(() => {
-    try {
-      const key = "edulevel:progress";
-      const existing = JSON.parse(window.localStorage.getItem(key) || "{}");
-      existing[`${subject}:${level}`] = {
-        score,
-        total: questions.length,
-        pct: Math.round((score / questions.length) * 100),
-        savedAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem(key, JSON.stringify(existing));
-      setProgressSaved(true);
-    } catch (e) {
-      console.error("No se pudo guardar el progreso", e);
-    }
-  }, [level, questions.length, score, subject]);
+    const existing = readProgress();
+    existing[`${subject}:${level}`] = {
+      score,
+      total,
+      pct: total > 0 ? Math.round((score / total) * 100) : 0,
+      savedAt: new Date().toISOString(),
+    };
+    writeProgress(existing);
+    setProgressSaved(true);
+  }, [level, score, subject, total]);
 
   const handleSelect = (idx: number) => {
     if (isAnswered) return;
     setSelected(idx);
     const next = [...answered];
-    next[current] = true;
+    next[safeCurrent] = true;
     setAnswered(next);
     if (idx === q.correct) setScore((s) => s + 1);
   };
 
   const handleNext = () => {
-    if (current < questions.length - 1) {
-      setCurrent((c) => c + 1);
+    if (safeCurrent < total - 1) {
+      setCurrent(safeCurrent + 1);
       setSelected(null);
     } else {
       setShowResult(true);
@@ -571,13 +791,14 @@ const QuizView = memo(function QuizView({
   const resetQuiz = () => {
     setCurrent(0);
     setSelected(null);
-    setAnswered(new Array(questions.length).fill(false));
+    setAnswered(new Array(total).fill(false));
     setScore(0);
     setShowResult(false);
+    setProgressSaved(false);
   };
 
   if (showResult) {
-    const pct = Math.round((score / questions.length) * 100);
+    const pct = total > 0 ? Math.round((score / total) * 100) : 0;
     const msg = pct >= 80 ? "¡Excelente resultado!" : pct >= 60 ? "¡Buen trabajo!" : "¡Sigue practicando!";
     const tip =
       pct >= 80
@@ -594,15 +815,22 @@ const QuizView = memo(function QuizView({
           <div
             className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl"
             style={{ background: config.lightBg, border: `3px solid ${config.borderColor}` }}
+            aria-hidden="true"
           >
             {emoji}
           </div>
           <h2 className="text-3xl font-display font-black text-slate-800 mb-2">{msg}</h2>
-          <p className="text-slate-500 mb-8">{config.label} — {levelLabel}</p>
+          <p className="text-slate-500 mb-8">
+            {config.label} — {levelLabel}
+          </p>
           <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-100 mb-8">
-            <div className="text-6xl font-display font-black mb-2" style={{ color: config.color }}>{pct}%</div>
-            <p className="text-slate-600 text-lg">{score} de {questions.length} respuestas correctas</p>
-            <div className="w-full bg-slate-100 rounded-full h-3 mt-6">
+            <div className="text-6xl font-display font-black mb-2" style={{ color: config.color }}>
+              {pct}%
+            </div>
+            <p className="text-slate-600 text-lg">
+              {score} de {total} respuestas correctas
+            </p>
+            <div className="w-full bg-slate-100 rounded-full h-3 mt-6" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
               <div className="h-3 rounded-full transition-all duration-1000" style={{ width: `${pct}%`, background: config.color }} />
             </div>
           </div>
@@ -612,13 +840,18 @@ const QuizView = memo(function QuizView({
             <p className="text-sm text-slate-600 leading-relaxed">{tip}</p>
           </div>
           <div className="flex gap-3 justify-center flex-wrap">
-            <button onClick={resetQuiz} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition-all">
+            <button type="button" onClick={resetQuiz} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition-all">
               Intentar de nuevo
             </button>
-            <button onClick={handleSaveProgress} disabled={progressSaved} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition-all disabled:opacity-70 disabled:cursor-default">
+            <button
+              type="button"
+              onClick={handleSaveProgress}
+              disabled={progressSaved}
+              className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition-all disabled:opacity-70 disabled:cursor-default"
+            >
               {progressSaved ? "✓ Progreso guardado" : "Guardar progreso"}
             </button>
-            <button onClick={onBack} className="px-6 py-3 rounded-xl font-semibold text-white transition-all hover:opacity-90" style={{ background: config.color }}>
+            <button type="button" onClick={onBack} className="px-6 py-3 rounded-xl font-semibold text-white transition-all hover:opacity-90" style={{ background: config.color }}>
               Elegir otro tema
             </button>
           </div>
@@ -632,17 +865,27 @@ const QuizView = memo(function QuizView({
       <AdSlotLeaderboard />
       <div className="max-w-[1200px] mx-auto px-4 py-8">
         <div className="flex items-center gap-2 mb-6 text-sm">
-          <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors">← Inicio</button>
-          <span className="text-slate-300">/</span>
+          <button type="button" onClick={onBack} className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors">
+            ← Inicio
+          </button>
+          <span className="text-slate-300" aria-hidden="true">
+            /
+          </span>
           <span className="font-medium text-slate-600">{config.label}</span>
-          <span className="text-slate-300">/</span>
-          <span className="font-semibold" style={{ color: config.color }}>{levelLabel}</span>
+          <span className="text-slate-300" aria-hidden="true">
+            /
+          </span>
+          <span className="font-semibold" style={{ color: config.color }}>
+            {levelLabel}
+          </span>
         </div>
 
         <div className="flex gap-6 items-start">
           <div className="flex-1 min-w-0">
             <div className="rounded-2xl p-6 mb-4 flex items-center gap-4" style={{ background: config.lightBg, border: `1.5px solid ${config.borderColor}` }}>
-              <span className="text-3xl">{config.icon}</span>
+              <span className="text-3xl" aria-hidden="true">
+                {config.icon}
+              </span>
               <div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide" style={{ background: config.color + "20", color: config.color }}>
                   {levelLabel}
@@ -653,16 +896,18 @@ const QuizView = memo(function QuizView({
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="w-full h-1.5 bg-slate-100">
-                <div className="h-1.5 transition-all duration-500" style={{ width: `${((current + 1) / questions.length) * 100}%`, background: config.color }} />
+              <div className="w-full h-1.5 bg-slate-100" role="progressbar" aria-valuenow={safeCurrent + 1} aria-valuemin={1} aria-valuemax={total}>
+                <div className="h-1.5 transition-all duration-500" style={{ width: `${((safeCurrent + 1) / total) * 100}%`, background: config.color }} />
               </div>
               <div className="p-8">
                 <div className="flex items-center justify-between mb-6">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pregunta {current + 1} de {questions.length}</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    Pregunta {safeCurrent + 1} de {total}
+                  </span>
                   <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">✓ {score} correctas</span>
                 </div>
                 <p className="text-xl font-bold text-slate-800 mb-6 leading-relaxed">{q.question}</p>
-                <div className="grid gap-3">
+                <div className="grid gap-3" role="group" aria-label="Opciones de respuesta">
                   {q.options.map((opt, idx) => {
                     let style: React.CSSProperties = { border: "1.5px solid #E2E8F0", background: "#FFFFFF", color: "#334155" };
                     if (isAnswered) {
@@ -676,6 +921,7 @@ const QuizView = memo(function QuizView({
                     return (
                       <button
                         key={idx}
+                        type="button"
                         onClick={() => handleSelect(idx)}
                         disabled={isAnswered}
                         className="w-full text-left px-5 py-4 rounded-xl font-medium text-sm transition-all flex items-center gap-3 hover:shadow-sm active:scale-[0.99] disabled:cursor-default"
@@ -690,15 +936,21 @@ const QuizView = memo(function QuizView({
                   })}
                 </div>
                 {isAnswered && (
-                  <div className="mt-6 flex items-center justify-between">
+                  <div className="mt-6 flex items-center justify-between flex-wrap gap-3">
                     <div
                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
                       style={selected === q.correct ? { background: config.lightBg, color: config.color } : { background: "#FEF2F2", color: "#DC2626" }}
+                      role="status"
                     >
                       {selected === q.correct ? "✓ ¡Correcto!" : `✗ La respuesta correcta es ${optionLetters[q.correct]}`}
                     </div>
-                    <button onClick={handleNext} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm transition-all hover:opacity-90 active:scale-[0.98]" style={{ background: config.color }}>
-                      {current < questions.length - 1 ? "Siguiente →" : "Ver resultados"}
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm transition-all hover:opacity-90 active:scale-[0.98]"
+                      style={{ background: config.color }}
+                    >
+                      {safeCurrent < total - 1 ? "Siguiente →" : "Ver resultados"}
                     </button>
                   </div>
                 )}
@@ -706,7 +958,7 @@ const QuizView = memo(function QuizView({
             </div>
           </div>
 
-          <div className="hidden lg:flex flex-col gap-4 w-[300px] shrink-0">
+          <aside className="hidden lg:flex flex-col gap-4 w-[300px] shrink-0">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
               <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-widest">Progreso del Test</h3>
               <div className="grid grid-cols-5 gap-2 mb-4">
@@ -715,12 +967,13 @@ const QuizView = memo(function QuizView({
                     key={i}
                     className="h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all"
                     style={
-                      i === current
+                      i === safeCurrent
                         ? { background: config.color, color: "#fff" }
                         : answered[i]
                           ? { background: config.lightBg, color: config.color, border: `1px solid ${config.borderColor}` }
                           : { background: "#F1F5F9", color: "#94A3B8" }
                     }
+                    aria-current={i === safeCurrent ? "step" : undefined}
                   >
                     {i + 1}
                   </div>
@@ -728,23 +981,29 @@ const QuizView = memo(function QuizView({
               </div>
               <div className="text-xs text-slate-500 flex items-center justify-between">
                 <span>{answeredCount} respondidas</span>
-                <span className="font-semibold" style={{ color: config.color }}>{score} correctas</span>
+                <span className="font-semibold" style={{ color: config.color }}>
+                  {score} correctas
+                </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2 mt-3">
-                <div className="h-2 rounded-full transition-all" style={{ width: `${(answeredCount / questions.length) * 100}%`, background: config.color }} />
+                <div className="h-2 rounded-full transition-all" style={{ width: `${(answeredCount / total) * 100}%`, background: config.color }} />
               </div>
             </div>
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-center">
-              <div className="text-2xl mb-2">🔓</div>
+              <div className="text-2xl mb-2" aria-hidden="true">
+                🔓
+              </div>
               <p className="text-sm font-semibold text-blue-800 mb-1">Desbloquea todo el contenido</p>
               <p className="text-xs text-blue-600 mb-3">Crea una cuenta gratis y accede a todos los tests disponibles.</p>
-              <button onClick={onLogin} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all">
+              <button type="button" onClick={onLogin} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all">
                 Crear Cuenta Gratis
               </button>
             </div>
             <AdSlotSkyscraper />
-            <div className="mt-4"><AdSlotContent /></div>
-          </div>
+            <div className="mt-4">
+              <AdSlotContent />
+            </div>
+          </aside>
         </div>
       </div>
     </div>
@@ -755,27 +1014,38 @@ const QuizView = memo(function QuizView({
 
 const FormulaSheetModal = memo(function FormulaSheetModal({ sheet, onClose }: { sheet: FormulaSheet; onClose: () => void }) {
   return (
-    <ModalShell onClose={onClose} maxW="max-w-lg">
+    <ModalShell onClose={onClose} maxW="max-w-lg" labelledBy="formula-sheet-title">
       <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-3" style={{ background: sheet.bg }}>
         <div className="flex items-center gap-3">
-          <span className="text-3xl">{sheet.icon}</span>
+          <span className="text-3xl" aria-hidden="true">
+            {sheet.icon}
+          </span>
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: sheet.color }}>{sheet.subject}</span>
-            <h2 className="text-lg font-display font-black text-slate-800">{sheet.title}</h2>
+            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: sheet.color }}>
+              {sheet.subject}
+            </span>
+            <h2 id="formula-sheet-title" className="text-lg font-display font-black text-slate-800">
+              {sheet.title}
+            </h2>
           </div>
         </div>
-        <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/60 transition-colors">✕</button>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/60 transition-colors">
+          ✕
+        </button>
       </div>
       <div className="px-6 py-5">
         <ul className="space-y-3 mb-5">
           {sheet.items.map((item, j) => (
             <li key={j} className="flex items-start gap-3 text-sm text-slate-700">
-              <span className="mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: sheet.color }}>{j + 1}</span>
+              <span className="mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: sheet.color }}>
+                {j + 1}
+              </span>
               <span className="font-mono text-sm leading-relaxed">{item}</span>
             </li>
           ))}
         </ul>
         <button
+          type="button"
           onClick={() => window.print()}
           className="w-full py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-80"
           style={{ borderColor: sheet.color, color: sheet.color, background: sheet.bg }}
@@ -786,6 +1056,221 @@ const FormulaSheetModal = memo(function FormulaSheetModal({ sheet, onClose }: { 
     </ModalShell>
   );
 });
+
+// ─── Home sections (internal components) ──────────────────────────────────────
+
+function HomeHero() {
+  return (
+    <section className="relative overflow-hidden dot-grid-bg" style={{ background: "linear-gradient(160deg, #0E1D54 0%, #152A79 45%, #2347C5 100%)" }}>
+      <div
+        className="pointer-events-none absolute -top-24 right-[-10%] w-[520px] h-[520px] rounded-full opacity-40 blur-3xl"
+        style={{ background: "radial-gradient(circle, var(--color-glow) 0%, transparent 70%)" }}
+      />
+      <div className="relative max-w-[1440px] mx-auto px-4 lg:px-8 pt-16 pb-14 text-center">
+        <div className="rise-in rise-in-1 inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-full mb-6 uppercase tracking-wider backdrop-blur-sm">
+          🎓 Plataforma de Aprendizaje Interactivo
+        </div>
+        <h1 className="rise-in rise-in-2 font-display text-4xl md:text-6xl font-bold text-white leading-tight mb-5 max-w-3xl mx-auto">
+          Practica, aprende y{" "}
+          <span className="text-transparent bg-clip-text" style={{ backgroundImage: "linear-gradient(135deg, #7DD3FC, #DCE7FF)" }}>
+            supera tus exámenes
+          </span>
+        </h1>
+        <p className="rise-in rise-in-3 text-lg text-blue-100 max-w-2xl mx-auto mb-10 leading-relaxed">
+          Tests interactivos de Matemáticas, Historia, Lengua y Gramática, Geografía, Física y Química. Elige tu nivel y comprueba cuánto sabes hoy.
+        </p>
+        <div className="rise-in rise-in-4 flex items-center justify-center gap-8 flex-wrap text-center">
+          {[
+            { value: String(totalTestCount), label: "Tests disponibles" },
+            { value: String(totalQuestionCount), label: "Preguntas únicas" },
+            { value: String(totalSubjectCount), label: "Materias" },
+            { value: "Gratis", label: "Para empezar" },
+          ].map((s) => (
+            <div key={s.label}>
+              <div className="font-display text-2xl font-bold text-white">{s.value}</div>
+              <div className="text-xs text-blue-200 font-medium mt-0.5 font-data">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <svg className="relative block w-full text-[#F5F8FF]" viewBox="0 0 1440 44" fill="none" preserveAspectRatio="none" style={{ height: "36px" }} aria-hidden="true">
+        <path d="M0 44 C 360 0, 1080 0, 1440 44 L1440 44 L0 44 Z" fill="currentColor" />
+      </svg>
+    </section>
+  );
+}
+
+function SubjectGrid({
+  expandedSubject,
+  setExpandedSubject,
+  savedProgress,
+  onStartQuiz,
+}: {
+  expandedSubject: Subject | null;
+  setExpandedSubject: (s: Subject | null) => void;
+  savedProgress: Record<string, SavedProgressEntry>;
+  onStartQuiz: (s: Subject, l: Level) => void;
+}) {
+  return (
+    <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16" aria-labelledby="materias">
+      <div className="mb-8">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Materias</p>
+        <h2 id="materias" className="text-2xl font-display font-black text-slate-800 mb-2">
+          Elige una materia
+        </h2>
+        <p className="text-slate-500 text-sm max-w-2xl">
+          Selecciona un tema y tu nivel para comenzar tu práctica con ejercicios estructurados y repeticiones útiles para estudiar mejor.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {SUBJECTS.map((subj) => {
+          const cfg = subjectConfig[subj];
+          const isExpanded = expandedSubject === subj;
+          return (
+            <div
+              key={subj}
+              className="bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all overflow-hidden"
+              style={{ borderColor: isExpanded ? cfg.borderColor : "#E2E8F0" }}
+            >
+              <button
+                type="button"
+                className="w-full text-left p-6 cursor-pointer"
+                style={isExpanded ? { background: cfg.lightBg } : undefined}
+                onClick={() => setExpandedSubject(isExpanded ? null : subj)}
+                aria-expanded={isExpanded}
+                aria-controls={`levels-${subj}`}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-sm"
+                    style={{ background: cfg.color + "18", border: `1.5px solid ${cfg.borderColor}` }}
+                    aria-hidden="true"
+                  >
+                    {cfg.icon}
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: cfg.color + "15", color: cfg.color }}>
+                    {cfg.tests} tests
+                  </span>
+                </div>
+                <h3 className="text-xl font-display font-black text-slate-800 mb-1">{cfg.label}</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">{cfg.desc}</p>
+                <p className="text-xs font-semibold mt-3" style={{ color: cfg.color }}>
+                  {cfg.tests} tests disponibles para practicar
+                </p>
+                <div className="flex items-center gap-1.5 mt-4">
+                  <div className="flex-1 text-center py-2 rounded-lg text-xs font-bold transition-all" style={{ background: cfg.color + "12", color: cfg.color }}>
+                    {isExpanded ? "▲ Ocultar niveles" : "▼ Ver niveles"}
+                  </div>
+                </div>
+              </button>
+              {isExpanded && (
+                <div id={`levels-${subj}`} className="border-t px-6 py-4 flex flex-col gap-2" style={{ borderColor: cfg.borderColor }}>
+                  {LEVELS.map((lv) => {
+                    const saved = savedProgress[`${subj}:${lv.key}`];
+                    return (
+                      <button
+                        key={lv.key}
+                        type="button"
+                        onClick={() => onStartQuiz(subj, lv.key)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
+                        style={{ background: cfg.lightBg, border: `1.5px solid ${cfg.borderColor}` }}
+                      >
+                        <span className="text-lg" aria-hidden="true">
+                          {lv.icon}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-800">{lv.label}</span>
+                            {saved && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.color + "18", color: cfg.color }}>
+                                ✓ {saved.pct}% guardado
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-slate-500">{lv.desc}</span>
+                        </div>
+                        <span className="text-slate-300 shrink-0" aria-hidden="true">
+                          →
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SiteFooter({ onTab }: { onTab: (t: Tab) => void }) {
+  const year = new Date().getFullYear();
+  return (
+    <footer className="text-blue-200 mt-16" style={{ background: "linear-gradient(160deg, #0E1D54 0%, #091339 100%)" }}>
+      <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12">
+        <div className="mb-10">
+          <AdSlotContent />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(150deg, #38BDF8, #2347C5)" }}>
+                <span className="text-white text-base font-display font-bold">E</span>
+              </div>
+              <span className="text-lg font-display font-bold text-white tracking-tight">EduLevel</span>
+            </div>
+            <p className="text-sm leading-relaxed max-w-xs text-blue-200/80">
+              Plataforma educativa gratuita de tests y simulacros para estudiantes de bachillerato y acceso universitario.
+            </p>
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-blue-100 uppercase tracking-widest mb-4 font-data">Plataforma</h4>
+            <ul className="space-y-2 text-sm">
+              {(
+                [
+                  { label: "Inicio", tab: "inicio" as Tab },
+                  { label: "Simulacros de Examen", tab: "simulacros" as Tab },
+                  { label: "Fórmulas & Machetes", tab: "formulas" as Tab },
+                  { label: "Guías de Estudio", tab: "guias" as Tab },
+                ] as const
+              ).map((l) => (
+                <li key={l.label}>
+                  <button type="button" onClick={() => onTab(l.tab)} className="hover:text-white transition-colors text-left">
+                    {l.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-blue-100 uppercase tracking-widest mb-4 font-data">Legal</h4>
+            <ul className="space-y-2 text-sm">
+              {[
+                { label: "Política de Privacidad", href: "#/privacy" },
+                { label: "Términos de Uso", href: "#/terms" },
+                { label: "Política de Cookies", href: "#/privacy" },
+                { label: "Contacto", href: "#/contact" },
+              ].map((l) => (
+                <li key={l.label}>
+                  <a href={l.href} className="hover:text-white transition-colors">
+                    {l.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <span>© {year} EduLevel. Todos los derechos reservados.</span>
+          <span className="text-blue-300/60">Desarrollado para maximizar el aprendizaje educativo.</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 // ─── Home View ────────────────────────────────────────────────────────────────
 
 const HomeView = memo(function HomeView({
@@ -802,37 +1287,25 @@ const HomeView = memo(function HomeView({
   const [activeTab, setActiveTab] = useState<Tab>("inicio");
   const [expandedSubject, setExpandedSubject] = useState<Subject | null>(null);
   const [openSheetIndex, setOpenSheetIndex] = useState<number | null>(null);
-  const [savedProgress, setSavedProgress] = useState<Record<string, { score: number; total: number; pct: number }>>({});
+  const [savedProgress, setSavedProgress] = useState<Record<string, SavedProgressEntry>>({});
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("edulevel:progress");
-      if (raw) setSavedProgress(JSON.parse(raw));
-    } catch (e) {
-      console.error("No se pudo leer el progreso guardado", e);
-    }
+    setSavedProgress(readProgress());
   }, []);
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "inicio", label: "Inicio" },
-    { key: "simulacros", label: "Simulacros" },
-    { key: "formulas", label: "Fórmulas" },
-    { key: "guias", label: "Guías" },
-  ];
+  const setTab = (tab: Tab) => {
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const mainNav = [
     { label: "Inicio", onClick: () => setActiveTab("inicio"), active: activeTab === "inicio" },
     { label: "Simulacros", onClick: () => setActiveTab("simulacros"), active: activeTab === "simulacros" },
     { label: "Fórmulas", onClick: () => setActiveTab("formulas"), active: activeTab === "formulas" },
     { label: "Guías", onClick: () => setActiveTab("guias"), active: activeTab === "guias" },
-    { label: "Blog / Artículos educativos", href: "#articulos" },
-    { label: "Contacto", href: "#/contact" },
+    { label: "Blog / Artículos educativos", href: "#articulos" as string | undefined },
+    { label: "Contacto", href: "#/contact" as string | undefined },
   ];
-
-  const setTab = (tab: Tab) => {
-    setActiveTab(tab);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -840,7 +1313,10 @@ const HomeView = memo(function HomeView({
         <div className="max-w-[1440px] mx-auto px-4 lg:px-8">
           <div className="flex items-center h-16 gap-6">
             <div className="flex items-center gap-2.5 shrink-0">
-              <div className="relative w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shadow-blue-300/50" style={{ background: "linear-gradient(150deg, #2347C5, #0E1D54)" }}>
+              <div
+                className="relative w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shadow-blue-300/50"
+                style={{ background: "linear-gradient(150deg, #2347C5, #0E1D54)" }}
+              >
                 <span className="text-white text-base font-display font-bold">E</span>
               </div>
               <span className="text-lg font-display font-bold text-slate-800 tracking-tight">EduLevel</span>
@@ -855,12 +1331,16 @@ const HomeView = memo(function HomeView({
                 ) : (
                   <button
                     key={item.label}
+                    type="button"
                     onClick={item.onClick}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${item.active ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"}`}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      item.active ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                    aria-current={item.active ? "page" : undefined}
                   >
                     {item.label}
                   </button>
-                )
+                ),
               )}
             </nav>
 
@@ -877,12 +1357,20 @@ const HomeView = memo(function HomeView({
                     )}
                     <span className="text-sm font-semibold text-slate-700">{user.displayName ?? user.email ?? "Usuario"}</span>
                   </div>
-                  <button onClick={onLogout} className="text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">Salir</button>
+                  <button type="button" onClick={onLogout} className="text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">
+                    Salir
+                  </button>
                 </>
               ) : (
                 <>
-                  <button onClick={onLogin} className="hidden sm:block text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">Iniciar Sesión</button>
-                  <button onClick={onLogin} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.97] shadow-sm shadow-blue-200">
+                  <button type="button" onClick={onLogin} className="hidden sm:block text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">
+                    Iniciar Sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onLogin}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.97] shadow-sm shadow-blue-200"
+                  >
                     Crear Cuenta Gratis
                   </button>
                 </>
@@ -891,54 +1379,39 @@ const HomeView = memo(function HomeView({
           </div>
 
           <div className="md:hidden flex gap-1 overflow-x-auto pb-2 scrollbar-hide">
-            {tabs.map((t) => (
+            {TABS.map((t) => (
               <button
                 key={t.key}
+                type="button"
                 onClick={() => setActiveTab(t.key)}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeTab === t.key ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700"}`}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === t.key ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700"
+                }`}
+                aria-current={activeTab === t.key ? "page" : undefined}
               >
                 {t.label}
               </button>
             ))}
-            <a href="#articulos" className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 transition-all">Blog</a>
-            <a href="#/contact" className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 transition-all">Contacto</a>
+            <a href="#articulos" className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 transition-all">
+              Blog
+            </a>
+            <a href="#/contact" className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 transition-all">
+              Contacto
+            </a>
           </div>
         </div>
       </header>
 
       {activeTab === "inicio" && (
         <main>
-          <section className="relative overflow-hidden dot-grid-bg" style={{ background: "linear-gradient(160deg, #0E1D54 0%, #152A79 45%, #2347C5 100%)" }}>
-            <div className="pointer-events-none absolute -top-24 right-[-10%] w-[520px] h-[520px] rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--color-glow) 0%, transparent 70%)" }} />
-            <div className="relative max-w-[1440px] mx-auto px-4 lg:px-8 pt-16 pb-14 text-center">
-              <div className="rise-in rise-in-1 inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-full mb-6 uppercase tracking-wider backdrop-blur-sm">
-                🎓 Plataforma de Aprendizaje Interactivo
-              </div>
-              <h1 className="rise-in rise-in-2 font-display text-4xl md:text-6xl font-bold text-white leading-tight mb-5 max-w-3xl mx-auto">
-                Practica, aprende y{" "}
-                <span className="text-transparent bg-clip-text" style={{ backgroundImage: "linear-gradient(135deg, #7DD3FC, #DCE7FF)" }}>supera tus exámenes</span>
-              </h1>
-              <p className="rise-in rise-in-3 text-lg text-blue-100 max-w-xl mx-auto mb-10 leading-relaxed">
-                Tests interactivos de Matemáticas, Historia y Gramática. Elige tu nivel y comprueba cuánto sabes hoy.
-              </p>
-              <div className="rise-in rise-in-4 flex items-center justify-center gap-8 flex-wrap text-center">
-                {homeStats.map((s) => (
-                  <div key={s.label}>
-                    <div className="font-display text-2xl font-bold text-white">{s.value}</div>
-                    <div className="text-xs text-blue-200 font-medium mt-0.5 font-data">{s.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <svg className="relative block w-full text-[#F5F8FF]" viewBox="0 0 1440 44" fill="none" preserveAspectRatio="none" style={{ height: "36px" }} aria-hidden="true">
-              <path d="M0 44 C 360 0, 1080 0, 1440 44 L1440 44 L0 44 Z" fill="currentColor" />
-            </svg>
-          </section>
+          <HomeHero />
 
           <section aria-labelledby="aprendes" className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-8 -mt-2">
             <div className="bg-white border border-slate-200 rounded-3xl px-6 py-8 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600 mb-3 font-data">Qué aprenderás</p>
-              <h2 id="aprendes" className="font-display text-2xl md:text-3xl font-bold text-slate-900 mb-4">Practica con un plan claro y contenido útil por materia</h2>
+              <h2 id="aprendes" className="font-display text-2xl md:text-3xl font-bold text-slate-900 mb-4">
+                Practica con un plan claro y contenido útil por materia
+              </h2>
               <div className="grid gap-4 md:grid-cols-3">
                 {learningCards.map((item) => (
                   <article key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -953,9 +1426,9 @@ const HomeView = memo(function HomeView({
           <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-8">
             <div className="grid gap-4 md:grid-cols-4">
               {[
-                { value: "90", label: "preguntas disponibles" },
+                { value: String(totalQuestionCount), label: "preguntas disponibles" },
                 { value: "Gratis", label: "para empezar" },
-                { value: "3x", label: "más motivación con rutinas" },
+                { value: "3", label: "niveles por materia" },
                 { value: "100%", label: "en español" },
               ].map((item) => (
                 <div key={item.label} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm text-center">
@@ -966,80 +1439,36 @@ const HomeView = memo(function HomeView({
             </div>
           </section>
 
-          <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16" aria-labelledby="materias">
-            <div className="mb-8">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Materias</p>
-              <h2 id="materias" className="text-2xl font-display font-black text-slate-800 mb-2">Elige una materia</h2>
-              <p className="text-slate-500 text-sm max-w-2xl">Selecciona un tema y tu nivel para comenzar tu práctica con ejercicios estructurados y repeticiones útiles para estudiar mejor.</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {(Object.keys(subjectConfig) as Subject[]).map((subj) => {
-                const cfg = subjectConfig[subj];
-                const isExpanded = expandedSubject === subj;
-                return (
-                  <div key={subj} className="bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all overflow-hidden" style={{ borderColor: isExpanded ? cfg.borderColor : "#E2E8F0" }}>
-                    <div className="p-6 cursor-pointer" style={isExpanded ? { background: cfg.lightBg } : {}} onClick={() => setExpandedSubject(isExpanded ? null : subj)}>
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-sm" style={{ background: cfg.color + "18", border: `1.5px solid ${cfg.borderColor}` }}>
-                          {cfg.icon}
-                        </div>
-                        <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: cfg.color + "15", color: cfg.color }}>{cfg.tests} tests</span>
-                      </div>
-                      <h3 className="text-xl font-display font-black text-slate-800 mb-1">{cfg.label}</h3>
-                      <p className="text-sm text-slate-500 leading-relaxed">{cfg.desc}</p>
-                      <p className="text-xs font-semibold mt-3" style={{ color: cfg.color }}>{cfg.tests} tests disponibles para practicar</p>
-                      <div className="flex items-center gap-1.5 mt-4">
-                        <div className="flex-1 text-center py-2 rounded-lg text-xs font-bold transition-all" style={{ background: cfg.color + "12", color: cfg.color }}>
-                          {isExpanded ? "▲ Ocultar niveles" : "▼ Ver niveles"}
-                        </div>
-                      </div>
-                    </div>
-                    {isExpanded && (
-                      <div className="border-t px-6 py-4 flex flex-col gap-2" style={{ borderColor: cfg.borderColor }}>
-                        {LEVELS.map((lv) => {
-                          const saved = savedProgress[`${subj}:${lv.key}`];
-                          return (
-                            <button
-                              key={lv.key}
-                              onClick={() => onStartQuiz(subj, lv.key)}
-                              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
-                              style={{ background: cfg.lightBg, border: `1.5px solid ${cfg.borderColor}` }}
-                            >
-                              <span className="text-lg">{lv.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-bold text-slate-800">{lv.label}</span>
-                                  {saved && (
-                                    <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.color + "18", color: cfg.color }}>
-                                      ✓ {saved.pct}% guardado
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-xs text-slate-500">{lv.desc}</span>
-                              </div>
-                              <span className="text-slate-300 shrink-0">→</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <SubjectGrid
+            expandedSubject={expandedSubject}
+            setExpandedSubject={setExpandedSubject}
+            savedProgress={savedProgress}
+            onStartQuiz={onStartQuiz}
+          />
 
           <section id="articulos" aria-labelledby="articulos-titulo" className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16">
             <div className="mb-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Artículos y recursos</p>
-              <h2 id="articulos-titulo" className="text-2xl font-display font-black text-slate-800 mb-2">Guías y recursos para estudiar mejor</h2>
-              <p className="text-slate-500 max-w-2xl">Encuentra estrategias útiles para preparar tus exámenes, practicar por materias y mejorar tu rendimiento con un plan claro y realista.</p>
+              <h2 id="articulos-titulo" className="text-2xl font-display font-black text-slate-800 mb-2">
+                Guías y recursos para estudiar mejor
+              </h2>
+              <p className="text-slate-500 max-w-2xl">
+                Encuentra estrategias útiles para preparar tus exámenes, practicar por materias y mejorar tu rendimiento con un plan claro y realista.
+              </p>
             </div>
-            <div className="mb-6 hidden md:block"><AdSlotContent /></div>
+            <div className="mb-6 hidden md:block">
+              <AdSlotContent />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {articleCards.map((article) => (
-                <a key={article.title} href={`#/articulo/${article.slug}`} className="block bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-200 transition-all">
-                  <div className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 mb-3">Recurso</div>
+                <a
+                  key={article.title}
+                  href={`#/articulo/${article.slug}`}
+                  className="block bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-200 transition-all"
+                >
+                  <div className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 mb-3">
+                    Recurso
+                  </div>
                   <h3 className="text-lg font-bold text-slate-800 mb-2">{article.title}</h3>
                   <p className="text-sm text-slate-500">{article.meta}</p>
                   <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 mt-3">Leer guía →</span>
@@ -1051,7 +1480,9 @@ const HomeView = memo(function HomeView({
           <section aria-labelledby="guias-por-nivel" className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16">
             <div className="mb-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Guías por nivel</p>
-              <h2 id="guias-por-nivel" className="text-2xl font-display font-black text-slate-800 mb-2">Elige tu nivel y empieza a practicar con estructura</h2>
+              <h2 id="guias-por-nivel" className="text-2xl font-display font-black text-slate-800 mb-2">
+                Elige tu nivel y empieza a practicar con estructura
+              </h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {guideCards.map((guide) => (
@@ -1067,7 +1498,9 @@ const HomeView = memo(function HomeView({
           <section aria-labelledby="faq-educativa" className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16">
             <div className="mb-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Preguntas frecuentes</p>
-              <h2 id="faq-educativa" className="text-2xl font-display font-black text-slate-800 mb-2">Todo lo que suele preguntarse antes de empezar</h2>
+              <h2 id="faq-educativa" className="text-2xl font-display font-black text-slate-800 mb-2">
+                Todo lo que suele preguntarse antes de empezar
+              </h2>
             </div>
             <div className="space-y-4">
               {faqItems.map((item) => (
@@ -1082,9 +1515,13 @@ const HomeView = memo(function HomeView({
           <section aria-labelledby="retencion" className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16">
             <div className="mb-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Tu progreso</p>
-              <h2 id="retencion" className="text-2xl font-display font-black text-slate-800 mb-2">Mantén la constancia y mejora cada semana</h2>
+              <h2 id="retencion" className="text-2xl font-display font-black text-slate-800 mb-2">
+                Mantén la constancia y mejora cada semana
+              </h2>
             </div>
-            <div className="hidden md:block pb-6"><AdSlotContent /></div>
+            <div className="hidden md:block pb-6">
+              <AdSlotContent />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {retentionCards.map((item) => (
                 <article key={item.title} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -1102,7 +1539,9 @@ const HomeView = memo(function HomeView({
           <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pb-16" aria-labelledby="explora-contenido">
             <div className="mb-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Explora el contenido</p>
-              <h2 id="explora-contenido" className="text-2xl font-display font-black text-slate-800">Simulacros, fórmulas y guías para cada etapa</h2>
+              <h2 id="explora-contenido" className="text-2xl font-display font-black text-slate-800">
+                Simulacros, fórmulas y guías para cada etapa
+              </h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -1112,28 +1551,37 @@ const HomeView = memo(function HomeView({
                     <h3 className="text-lg font-display font-black text-slate-800">Tests destacados</h3>
                     <p className="text-sm text-slate-400">Practica ahora mismo, sin necesidad de crear cuenta</p>
                   </div>
-                  <button onClick={() => setActiveTab("simulacros")} className="text-xs font-bold text-blue-600 hover:text-blue-800 shrink-0 transition-colors">Ver todos →</button>
+                  <button type="button" onClick={() => setActiveTab("simulacros")} className="text-xs font-bold text-blue-600 hover:text-blue-800 shrink-0 transition-colors">
+                    Ver todos →
+                  </button>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {([
-                    { subject: "matematicas" as Subject, level: "avanzado" as Level },
-                    { subject: "historia" as Subject, level: "avanzado" as Level },
-                    { subject: "gramatica" as Subject, level: "intermedio" as Level },
-                  ]).map((item) => {
+                  {(
+                    [
+                      { subject: "matematicas" as Subject, level: "avanzado" as Level },
+                      { subject: "historia" as Subject, level: "avanzado" as Level },
+                      { subject: "gramatica" as Subject, level: "intermedio" as Level },
+                    ] as const
+                  ).map((item) => {
                     const cfg = subjectConfig[item.subject];
                     return (
-                      <div
+                      <button
                         key={`${item.subject}-${item.level}`}
+                        type="button"
                         onClick={() => onStartQuiz(item.subject, item.level)}
-                        className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all cursor-pointer"
+                        className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all text-left w-full"
                       >
-                        <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 shrink-0">{cfg.icon}</div>
+                        <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 shrink-0" aria-hidden="true">
+                          {cfg.icon}
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 truncate">{cfg.label} — {levelLabels[item.level]}</p>
+                          <p className="text-sm font-semibold text-slate-800 truncate">
+                            {cfg.label} — {levelLabels[item.level]}
+                          </p>
                           <p className="text-xs text-slate-400">{quizData[item.subject][item.level].length} preguntas</p>
                         </div>
                         <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-2 py-0.5 rounded-full shrink-0">{levelLabels[item.level]}</span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -1146,7 +1594,9 @@ const HomeView = memo(function HomeView({
                     <h3 className="text-lg font-display font-black text-slate-800">Cheat sheets escaneables</h3>
                     <p className="text-sm text-slate-400">Consulta rápida de fórmulas y reglas esenciales</p>
                   </div>
-                  <button onClick={() => setActiveTab("formulas")} className="text-xs font-bold text-violet-600 hover:text-violet-800 shrink-0 transition-colors">Ver todos →</button>
+                  <button type="button" onClick={() => setActiveTab("formulas")} className="text-xs font-bold text-violet-600 hover:text-violet-800 shrink-0 transition-colors">
+                    Ver todos →
+                  </button>
                 </div>
                 <div className="flex flex-col gap-3">
                   {[
@@ -1154,11 +1604,13 @@ const HomeView = memo(function HomeView({
                     { title: "Tabla de Figuras Retóricas", tags: ["Metáfora", "Hipérbole", "Anáfora"] },
                     { title: "Cronología Historia Universal", tags: ["Antigua", "Medieval", "Contemporánea"] },
                   ].map((sheet) => (
-                    <div key={sheet.title} className="p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-violet-50 hover:border-violet-100 transition-all cursor-pointer">
+                    <div key={sheet.title} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
                       <p className="text-sm font-semibold text-slate-800 mb-2">{sheet.title}</p>
                       <div className="flex gap-1.5 flex-wrap">
                         {sheet.tags.map((tag) => (
-                          <span key={tag} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">{tag}</span>
+                          <span key={tag} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
+                            {tag}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -1172,36 +1624,46 @@ const HomeView = memo(function HomeView({
 
       {activeTab === "simulacros" && (
         <main className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12">
-          <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-500">
-            <ol className="flex flex-wrap items-center gap-2">
-              <li><button onClick={() => setActiveTab("inicio")} className="text-blue-600 hover:text-blue-800 font-medium">Inicio</button></li>
-              <li>/</li>
-              <li aria-current="page" className="text-slate-700 font-medium">Simulacros</li>
-            </ol>
-          </nav>
+          <Breadcrumb
+            items={[
+              { label: "Inicio", onClick: () => setActiveTab("inicio") },
+              { label: "Simulacros", current: true },
+            ]}
+          />
           <div className="mb-8">
             <h1 className="text-3xl font-display font-black text-slate-900 mb-2">Simulacros de Examen</h1>
             <p className="text-slate-500">Tests de nivel avanzado por materia, ideales para practicar antes de un examen importante.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {(Object.keys(subjectConfig) as Subject[]).map((subj) => {
+            {SUBJECTS.map((subj) => {
               const cfg = subjectConfig[subj];
               const qCount = quizData[subj].avanzado.length;
               return (
-                <div key={subj} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md transition-all cursor-pointer group">
+                <div key={subj} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md transition-all group">
                   <div className="h-2" style={{ background: cfg.color }} />
                   <div className="p-6">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-xl">{cfg.icon}</span>
+                      <span className="text-xl" aria-hidden="true">
+                        {cfg.icon}
+                      </span>
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{cfg.label}</span>
                     </div>
-                    <h3 className="text-base font-bold text-slate-800 mb-4 leading-snug">Simulacro {cfg.label} — {levelLabels.avanzado}</h3>
+                    <h3 className="text-base font-bold text-slate-800 mb-4 leading-snug">
+                      Simulacro {cfg.label} — {levelLabels.avanzado}
+                    </h3>
                     <div className="flex items-center gap-3 text-xs text-slate-500 mb-5">
                       <span className="flex items-center gap-1">❓ {qCount} preguntas</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: cfg.color + "15", color: cfg.color }}>{levelLabels.avanzado}</span>
-                      <button onClick={() => onStartQuiz(subj, "avanzado")} className="text-xs font-bold text-white px-4 py-2 rounded-lg transition-all hover:opacity-90 group-hover:scale-105" style={{ background: cfg.color }}>
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: cfg.color + "15", color: cfg.color }}>
+                        {levelLabels.avanzado}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onStartQuiz(subj, "avanzado")}
+                        className="text-xs font-bold text-white px-4 py-2 rounded-lg transition-all hover:opacity-90 group-hover:scale-105"
+                        style={{ background: cfg.color }}
+                      >
                         Comenzar →
                       </button>
                     </div>
@@ -1215,13 +1677,12 @@ const HomeView = memo(function HomeView({
 
       {activeTab === "formulas" && (
         <main className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12">
-          <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-500">
-            <ol className="flex flex-wrap items-center gap-2">
-              <li><button onClick={() => setActiveTab("inicio")} className="text-blue-600 hover:text-blue-800 font-medium">Inicio</button></li>
-              <li>/</li>
-              <li aria-current="page" className="text-slate-700 font-medium">Fórmulas</li>
-            </ol>
-          </nav>
+          <Breadcrumb
+            items={[
+              { label: "Inicio", onClick: () => setActiveTab("inicio") },
+              { label: "Fórmulas", current: true },
+            ]}
+          />
           <div className="mb-8">
             <h1 className="text-3xl font-display font-black text-slate-900 mb-2">Fórmulas & Machetes</h1>
             <p className="text-slate-500">Resúmenes visuales, tablas de fórmulas y esquemas para repasar en minutos.</p>
@@ -1230,9 +1691,13 @@ const HomeView = memo(function HomeView({
             {formulaSheets.map((sheet, i) => (
               <div key={i} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md transition-all">
                 <div className="px-6 pt-5 pb-4 flex items-center gap-3" style={{ background: sheet.bg }}>
-                  <span className="text-2xl">{sheet.icon}</span>
+                  <span className="text-2xl" aria-hidden="true">
+                    {sheet.icon}
+                  </span>
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: sheet.color }}>{sheet.subject}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: sheet.color }}>
+                      {sheet.subject}
+                    </span>
                     <h3 className="text-base font-bold text-slate-800">{sheet.title}</h3>
                   </div>
                 </div>
@@ -1240,12 +1705,15 @@ const HomeView = memo(function HomeView({
                   <ul className="space-y-2">
                     {sheet.items.map((item, j) => (
                       <li key={j} className="flex items-start gap-2.5 text-sm text-slate-700">
-                        <span className="mt-1 shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: sheet.color }}>{j + 1}</span>
+                        <span className="mt-1 shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: sheet.color }}>
+                          {j + 1}
+                        </span>
                         <span className="font-mono text-xs leading-relaxed">{item}</span>
                       </li>
                     ))}
                   </ul>
                   <button
+                    type="button"
                     onClick={() => setOpenSheetIndex(i)}
                     className="mt-4 w-full py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-80"
                     style={{ borderColor: sheet.color, color: sheet.color, background: sheet.bg }}
@@ -1261,13 +1729,12 @@ const HomeView = memo(function HomeView({
 
       {activeTab === "guias" && (
         <main className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12">
-          <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-500">
-            <ol className="flex flex-wrap items-center gap-2">
-              <li><button onClick={() => setActiveTab("inicio")} className="text-blue-600 hover:text-blue-800 font-medium">Inicio</button></li>
-              <li>/</li>
-              <li aria-current="page" className="text-slate-700 font-medium">Guías</li>
-            </ol>
-          </nav>
+          <Breadcrumb
+            items={[
+              { label: "Inicio", onClick: () => setActiveTab("inicio") },
+              { label: "Guías", current: true },
+            ]}
+          />
           <div className="mb-8">
             <h1 className="text-3xl font-display font-black text-slate-900 mb-2">Guías de Estudio</h1>
             <p className="text-slate-500">Planes de estudio estructurados para dominar cada materia a tu ritmo.</p>
@@ -1276,21 +1743,28 @@ const HomeView = memo(function HomeView({
             {STUDY_GUIDES.map((guide) => (
               <div key={guide.subject} className="bg-white rounded-2xl border overflow-hidden hover:shadow-md transition-all" style={{ borderColor: guide.border }}>
                 <div className="p-6" style={{ background: guide.bg }}>
-                  <span className="text-3xl block mb-3">{guide.icon}</span>
+                  <span className="text-3xl block mb-3" aria-hidden="true">
+                    {guide.icon}
+                  </span>
                   <h3 className="text-xl font-display font-black text-slate-800 mb-1">{guide.subject}</h3>
-                  <span className="text-xs font-bold" style={{ color: guide.color }}>Plan de {guide.weeks} semanas</span>
+                  <span className="text-xs font-bold" style={{ color: guide.color }}>
+                    Plan de {guide.weeks} semanas
+                  </span>
                 </div>
                 <div className="p-6">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Temario cubierto</p>
                   <ol className="space-y-2">
                     {guide.topics.map((topic, i) => (
                       <li key={i} className="flex items-center gap-2.5 text-sm text-slate-700">
-                        <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0" style={{ background: guide.color + "20", color: guide.color }}>{i + 1}</span>
+                        <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0" style={{ background: guide.color + "20", color: guide.color }}>
+                          {i + 1}
+                        </span>
                         {topic}
                       </li>
                     ))}
                   </ol>
                   <button
+                    type="button"
                     onClick={() => onStartQuiz(guide.key, "basico")}
                     className="mt-5 w-full py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
                     style={{ background: guide.color }}
@@ -1313,8 +1787,12 @@ const HomeView = memo(function HomeView({
               <p className="text-blue-100 max-w-xl">Crea tu cuenta gratis para guardar tu progreso, o practica ahora mismo sin registrarte.</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
-              <button onClick={onLogin} className="px-5 py-3 rounded-xl bg-white text-blue-700 font-bold shadow-sm hover:bg-blue-50 transition-all">Crear cuenta gratis</button>
-              <button onClick={() => setActiveTab("simulacros")} className="px-5 py-3 rounded-xl border border-white/40 text-white font-bold hover:bg-white/10 transition-all">Ver simulacros</button>
+              <button type="button" onClick={onLogin} className="px-5 py-3 rounded-xl bg-white text-blue-700 font-bold shadow-sm hover:bg-blue-50 transition-all">
+                Crear cuenta gratis
+              </button>
+              <button type="button" onClick={() => setActiveTab("simulacros")} className="px-5 py-3 rounded-xl border border-white/40 text-white font-bold hover:bg-white/10 transition-all">
+                Ver simulacros
+              </button>
             </div>
           </div>
         </div>
@@ -1327,7 +1805,7 @@ const HomeView = memo(function HomeView({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-12">
           {[
-            { step: "1", title: "Elige tu materia", text: "Selecciona Matemáticas, Historia o Gramática y accede a contenidos adaptados a tu nivel." },
+            { step: "1", title: "Elige tu materia", text: `Selecciona entre ${SUBJECT_LABELS_LIST} y accede a contenidos adaptados a tu nivel.` },
             { step: "2", title: "Practica en bloque", text: "Haz tests cortos, revisa errores y consolida cada tema con repeticiones útiles." },
             { step: "3", title: "Sigue avanzando", text: "Suma constancia semanal para mejorar tu rendimiento sin perder el ritmo ni frustrarte." },
           ].map((item) => (
@@ -1340,56 +1818,7 @@ const HomeView = memo(function HomeView({
         </div>
       </section>
 
-      <footer className="text-blue-200 mt-16" style={{ background: "linear-gradient(160deg, #0E1D54 0%, #091339 100%)" }}>
-        <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12">
-          <div className="mb-10"><AdSlotContent /></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(150deg, #38BDF8, #2347C5)" }}>
-                  <span className="text-white text-base font-display font-bold">E</span>
-                </div>
-                <span className="text-lg font-display font-bold text-white tracking-tight">EduLevel</span>
-              </div>
-              <p className="text-sm leading-relaxed max-w-xs text-blue-200/80">
-                Plataforma educativa gratuita de tests y simulacros para estudiantes de bachillerato y acceso universitario.
-              </p>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-blue-100 uppercase tracking-widest mb-4 font-data">Plataforma</h4>
-              <ul className="space-y-2 text-sm">
-                {([
-                  { label: "Inicio", tab: "inicio" as Tab },
-                  { label: "Simulacros de Examen", tab: "simulacros" as Tab },
-                  { label: "Fórmulas & Machetes", tab: "formulas" as Tab },
-                  { label: "Guías de Estudio", tab: "guias" as Tab },
-                ]).map((l) => (
-                  <li key={l.label}>
-                    <button onClick={() => setTab(l.tab)} className="hover:text-white transition-colors text-left">{l.label}</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-blue-100 uppercase tracking-widest mb-4 font-data">Legal</h4>
-              <ul className="space-y-2 text-sm">
-                {[
-                  { label: "Política de Privacidad", href: "#/privacy" },
-                  { label: "Términos de Uso", href: "#/terms" },
-                  { label: "Política de Cookies", href: "#/privacy" },
-                  { label: "Contacto", href: "#/contact" },
-                ].map((l) => (
-                  <li key={l.label}><a href={l.href} className="hover:text-white transition-colors">{l.label}</a></li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <span>© 2025 EduLevel. Todos los derechos reservados.</span>
-            <span className="text-blue-300/60">Desarrollado para maximizar el aprendizaje educativo.</span>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter onTab={setTab} />
 
       {openSheetIndex !== null && formulaSheets[openSheetIndex] && (
         <FormulaSheetModal sheet={formulaSheets[openSheetIndex]} onClose={() => setOpenSheetIndex(null)} />
@@ -1411,7 +1840,9 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const syncRoute = useCallback(() => {
-    const match = window.location.pathname.match(/^\/tests\/(matematicas|historia|gramatica|geografia|fisica|quimica)\/(basico|intermedio|avanzado)\/?$/);
+    const match = window.location.pathname.match(
+      /^\/tests\/(matematicas|historia|gramatica|geografia|fisica|quimica)\/(basico|intermedio|avanzado)\/?$/,
+    );
     if (match) {
       setActiveSubject(match[1] as Subject);
       setActiveLevel(match[2] as Level);
@@ -1457,7 +1888,10 @@ export default function App() {
     setActiveSubject(subject);
     setActiveLevel(level);
     setView("quiz");
-    window.history.pushState({}, "", testPath(subject, level));
+    const path = testPath(subject, level);
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, "", path);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -1465,7 +1899,13 @@ export default function App() {
     setView("home");
     setActiveSubject(null);
     setActiveLevel(null);
-    window.history.pushState({}, "", "/");
+    // Prefer back if the previous entry was home; otherwise replace to avoid stacking
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.history.replaceState({}, "", "/");
+    }
+    // Ensure state matches home if popstate is delayed
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -1496,10 +1936,10 @@ export default function App() {
     }
   }, []);
 
-  const clearHash = () => {
+  const clearHash = useCallback(() => {
     window.location.hash = "";
     setHashPage(null);
-  };
+  }, []);
 
   return (
     <>
@@ -1518,21 +1958,20 @@ export default function App() {
           <Contact onBack={clearHash} />
         </Suspense>
       )}
-      {hashPage?.startsWith("articulo/") && (() => {
-        const slug = hashPage.slice("articulo/".length);
-        const article = articleContent.find((a) => a.slug === slug);
-        if (!article) {
-          window.location.hash = "";
-          return null;
-        }
-        return <Article article={article} onBack={clearHash} />;
-      })()}
+      {hashPage?.startsWith("articulo/") &&
+        (() => {
+          const slug = hashPage.slice("articulo/".length);
+          const article = articleContent.find((a) => a.slug === slug);
+          if (!article) {
+            window.location.hash = "";
+            return null;
+          }
+          return <Article article={article} onBack={clearHash} />;
+        })()}
 
       {!hashPage && (
         <>
-          {view === "home" && (
-            <HomeView onStartQuiz={handleStartQuiz} onLogin={handleOpenLogin} user={user} onLogout={handleLogout} />
-          )}
+          {view === "home" && <HomeView onStartQuiz={handleStartQuiz} onLogin={handleOpenLogin} user={user} onLogout={handleLogout} />}
           {view === "quiz" && activeSubject && activeLevel && (
             <QuizView subject={activeSubject} level={activeLevel} onBack={handleBack} onLogin={handleOpenLogin} />
           )}
