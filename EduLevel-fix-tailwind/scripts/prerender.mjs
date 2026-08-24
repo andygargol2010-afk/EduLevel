@@ -22,7 +22,7 @@ import path from "node:path";
 
 const distDir = path.resolve(import.meta.dirname, "..", "dist");
 const indexPath = path.join(distDir, "index.html");
-const siteUrl = "https://design-edulevel-learning-platform.vercel.app";
+const siteUrl = "https://edulvl.com";
 
 const subjectLabels = {
   matematicas: "Matemáticas",
