@@ -1,0 +1,71 @@
+name: Apply simple App.tsx fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: !contains(github.event.head_commit.message, '[simple-fixes-applied]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply simple fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('EduLevel-fix-tailwind/src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'const siteUrl = "https://design-edulevel-learning-platform.vercel.app";',
+                  'const siteUrl = "https://edulvl.com";',
+              ),
+              (
+                  '"Tests interactivos para practicar Matemáticas, Historia y Lengua y Gramática por nivel."',
+                  '"Tests interactivos para practicar Matemáticas, Historia, Lengua y Gramática, Geografía, Física y Química por nivel."',
+              ),
+              (
+                  '{ value: "18", label: "Tests disponibles" },\n'
+                  '                { value: "90", label: "Preguntas únicas" },\n'
+                  '                { value: "6", label: "Materias" },',
+                  '{ value: String(totalTestCount), label: "Tests disponibles" },\n'
+                  '                { value: String(totalQuestionCount), label: "Preguntas únicas" },\n'
+                  '                { value: String(totalSubjectCount), label: "Materias" },',
+              ),
+              (
+                  '{ value: "90", label: "preguntas disponibles" },\n'
+                  '                { value: "Gratis", label: "para empezar" },\n'
+                  '                { value: "3x", label: "más motivación con rutinas" },\n'
+                  '                { value: "100%", label: "en español" },',
+                  '{ value: String(totalQuestionCount), label: "preguntas disponibles" },\n'
+                  '                { value: "Gratis", label: "para empezar" },\n'
+                  '                { value: "3 niveles", label: "por materia" },\n'
+                  '                { value: "100%", label: "en español" },',
+              ),
+              ('© 2025 EduLevel. Todos los derechos reservados.', '© {new Date().getFullYear()} EduLevel. Todos los derechos reservados.'),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'Missing expected text: {old[:80]}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit fixes and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/temp-simple-app-fixes.yml
+          git add EduLevel-fix-tailwind/src/App.tsx .github/workflows/temp-simple-app-fixes.yml
+          git commit -m "fix: update App.tsx content and stats [simple-fixes-applied]"
+          git push
