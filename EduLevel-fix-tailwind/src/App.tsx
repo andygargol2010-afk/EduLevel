@@ -39,7 +39,7 @@ const levelFullLabels: Record<Level, string> = {
 };
 
 function testPath(subject: Subject, level: Level) {
-  return `/tests/${subject}/${level}`;
+  return `/tests/subject/{level}`;
 }
 
 function setPageMetadata(subject: Subject | null, level: Level | null) {
@@ -51,7 +51,7 @@ function setPageMetadata(subject: Subject | null, level: Level | null) {
     subject && level
       ? `Practica ${subjectConfig[subject].label} con un test interactivo de nivel ${levelLabels[level]}. Revisa tus respuestas al finalizar.`
       : "Tests interactivos para practicar Matemáticas, Historia, Lengua y Gramática, Geografía, Física y Química por nivel.";
-  const canonical = `${siteUrl}${subject && level ? testPath(subject, level) : "/"}`;
+  const canonical = `siteUrl{subject && level ? testPath(subject, level) : "/"}`;
 
   document.title = title;
   const update = (selector: string, value: string) => {
@@ -760,7 +760,7 @@ const QuizView = memo(function QuizView({
 
   const handleSaveProgress = useCallback(() => {
     const existing = readProgress();
-    existing[`${subject}:${level}`] = {
+    existing[`subject:{level}`] = {
       score,
       total,
       pct: total > 0 ? Math.round((score / total) * 100) : 0,
@@ -1166,7 +1166,7 @@ function SubjectGrid({
               {isExpanded && (
                 <div id={`levels-${subj}`} className="border-t px-6 py-4 flex flex-col gap-2" style={{ borderColor: cfg.borderColor }}>
                   {LEVELS.map((lv) => {
-                    const saved = savedProgress[`${subj}:${lv.key}`];
+                    const saved = savedProgress[`subj:{lv.key}`];
                     return (
                       <button
                         key={lv.key}
@@ -1566,7 +1566,7 @@ const HomeView = memo(function HomeView({
                     const cfg = subjectConfig[item.subject];
                     return (
                       <button
-                        key={`${item.subject}-${item.level}`}
+                        key={`item.subject-{item.level}`}
                         type="button"
                         onClick={() => onStartQuiz(item.subject, item.level)}
                         className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all text-left w-full"
@@ -1777,7 +1777,7 @@ const HomeView = memo(function HomeView({
           </div>
         </main>
       )}
-
+{activeTab === "inicio" && (
       <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pt-8 pb-4">
         <div className="rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-600 via-blue-700 to-violet-700 p-8 text-white shadow-lg shadow-blue-200/60">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -1796,8 +1796,10 @@ const HomeView = memo(function HomeView({
             </div>
           </div>
         </div>
-      </section>    
+          </section>
+)}
       <SiteFooter onTab={setTab} />
+
 
       {openSheetIndex !== null && formulaSheets[openSheetIndex] && (
         <FormulaSheetModal sheet={formulaSheets[openSheetIndex]} onClose={() => setOpenSheetIndex(null)} />
@@ -1962,3 +1964,4 @@ export default function App() {
     </>
   );
 }
+
