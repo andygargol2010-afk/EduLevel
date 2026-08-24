@@ -1796,26 +1796,6 @@ const HomeView = memo(function HomeView({
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="max-w-[1440px] mx-auto px-4 lg:px-8 py-16">
-        <div className="mb-8 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Por qué estudiantes lo usan</p>
-          <h2 className="text-3xl font-display font-black text-slate-900">Aprender con estructura, no con ansiedad</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-12">
-          {[
-            { step: "1", title: "Elige tu materia", text: `Selecciona entre ${SUBJECT_LABELS_LIST} y accede a contenidos adaptados a tu nivel.` },
-            { step: "2", title: "Practica en bloque", text: "Haz tests cortos, revisa errores y consolida cada tema con repeticiones útiles." },
-            { step: "3", title: "Sigue avanzando", text: "Suma constancia semanal para mejorar tu rendimiento sin perder el ritmo ni frustrarte." },
-          ].map((item) => (
-            <div key={item.step} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center text-sm font-display font-black mb-4">{item.step}</div>
-              <h3 className="text-xl font-display font-black text-slate-800 mb-2">{item.title}</h3>
-              <p className="text-sm leading-relaxed text-slate-600">{item.text}</p>
-            </div>
-          ))}
-        </div>
       </section>    
       <SiteFooter onTab={setTab} />
 
