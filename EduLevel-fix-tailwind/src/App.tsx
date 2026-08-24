@@ -1816,8 +1816,7 @@ const HomeView = memo(function HomeView({
             </div>
           ))}
         </div>
-      </section>
-
+      </section>    
       <SiteFooter onTab={setTab} />
 
       {openSheetIndex !== null && formulaSheets[openSheetIndex] && (
