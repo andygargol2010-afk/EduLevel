@@ -11,43 +11,18 @@
 // mantienen intactos, así que React hidrata normalmente sobre este HTML en
 // cuanto el navegador ejecuta JS — el comportamiento de la SPA no cambia.
 //
-// IMPORTANTE: los datos de abajo (subjects, levels, labels, siteUrl) deben
-// mantenerse sincronizados manualmente con src/App.tsx (subjectConfig,
-// levelLabels, quizData, siteUrl). Si agregas una materia o nivel nuevo,
-// actualízalo también aquí.
+// La configuración de materias, niveles y cantidad de preguntas se lee
+// directamente de src/App.tsx mediante app-config.mjs. App.tsx es la única
+// fuente de verdad; el prerender ya no mantiene copias manuales.
 
-import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { subjectLabels, levelLabels, questionCounts } from "./app-config.mjs";
 
 const distDir = path.resolve(import.meta.dirname, "..", "dist");
 const indexPath = path.join(distDir, "index.html");
 const siteUrl = "https://edulvl.com";
-
-const subjectLabels = {
-  matematicas: "Matemáticas",
-  historia: "Historia",
-  gramatica: "Lengua y Gramática",
-  geografia: "Geografía",
-  fisica: "Física",
-  quimica: "Química",
-};
-
-const levelLabels = {
-  basico: "Básico",
-  intermedio: "Intermedio",
-  avanzado: "Avanzado",
-};
-
-// Debe reflejar cuántas preguntas tiene cada combinación en src/App.tsx (quizData).
-const questionCounts = {
-  matematicas: { basico: 5, intermedio: 5, avanzado: 5 },
-  historia: { basico: 5, intermedio: 5, avanzado: 5 },
-  gramatica: { basico: 5, intermedio: 5, avanzado: 5 },
-  geografia: { basico: 5, intermedio: 5, avanzado: 5 },
-  fisica: { basico: 5, intermedio: 5, avanzado: 5 },
-  quimica: { basico: 5, intermedio: 5, avanzado: 5 },
-};
 
 function buildHtml(template, subject, level) {
   const subjectLabel = subjectLabels[subject];
