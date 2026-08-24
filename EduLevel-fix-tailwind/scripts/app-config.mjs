@@ -1,8 +1,7 @@
 // scripts/app-config.mjs
-//
-// Reads the existing quiz configuration directly from src/App.tsx at build time.
-// App.tsx remains the single source of truth; the prerenderer does not maintain
-// a second manual copy of subjects, levels, labels, or question counts.
+// App.tsx is the single source of truth for subjects, levels and quiz counts.
+// This build-time reader lets the prerenderer consume that existing config
+// without maintaining a second manual copy.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -12,7 +11,6 @@ const appPath = path.resolve(import.meta.dirname, "..", "src", "App.tsx");
 function findObjectLiteral(source, marker) {
   const markerIndex = source.indexOf(marker);
   if (markerIndex === -1) throw new Error(`No se encontró ${marker} en App.tsx`);
-
   const start = source.indexOf("{", markerIndex);
   if (start === -1) throw new Error(`No se encontró el objeto de ${marker}`);
 
@@ -38,17 +36,14 @@ function findObjectLiteral(source, marker) {
       continue;
     }
     if (quote) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = null;
       continue;
     }
-    if (char === "//") {
+    if (char === "/" && next === "/") {
       lineComment = true;
+      i += 1;
       continue;
     }
     if (char === "/" && next === "*") {
@@ -61,7 +56,7 @@ function findObjectLiteral(source, marker) {
       continue;
     }
     if (char === "{") depth += 1;
-    if (char === "}") {
+    else if (char === "}") {
       depth -= 1;
       if (depth === 0) return source.slice(start, i + 1);
     }
@@ -110,10 +105,10 @@ function topLevelEntries(objectText) {
   return entries;
 }
 
-function stringProperty(objectText, property) {
-  const match = objectText.match(new RegExp(`\\b${property}\\s*:\\s*(["'])(.*?)\\1`));
-  if (!match) throw new Error(`No se encontró ${property}`);
-  return match[2];
+function readStringLiteral(value) {
+  const match = value.match(/^["']([\s\S]*)["']$/);
+  if (!match) throw new Error(`Se esperaba una cadena, se obtuvo: ${value}`);
+  return match[1];
 }
 
 function countQuestions(arrayText) {
@@ -122,25 +117,26 @@ function countQuestions(arrayText) {
 
 function buildConfig(source) {
   const subjectsObject = findObjectLiteral(source, "const subjectConfig =");
-  const levelsMatch = source.match(/const levelLabels[^=]*=\s*({[\s\S]*?})\s*;/);
-  if (!levelsMatch) throw new Error("No se encontró levelLabels en App.tsx");
+  const levelsObject = findObjectLiteral(source, "const levelLabels");
+  const quizObject = findObjectLiteral(source, "const quizData:");
 
   const subjectEntries = topLevelEntries(subjectsObject);
-  const levelEntries = topLevelEntries(levelsMatch[1]);
-  const quizObject = findObjectLiteral(source, "const quizData:");
+  const levelEntries = topLevelEntries(levelsObject);
   const quizEntries = topLevelEntries(quizObject);
-
   const subjects = {};
+
   for (const [subject, value] of Object.entries(subjectEntries)) {
     const config = topLevelEntries(value);
     const quizLevels = topLevelEntries(quizEntries[subject]);
     const counts = {};
+
     for (const level of Object.keys(levelEntries)) {
       if (!quizLevels[level]) throw new Error(`Falta ${subject}.${level} en quizData`);
       counts[level] = countQuestions(quizLevels[level]);
     }
+
     subjects[subject] = {
-      label: stringProperty(value, "label"),
+      label: readStringLiteral(config.label),
       questionCounts: counts,
     };
   }
@@ -148,7 +144,7 @@ function buildConfig(source) {
   return {
     subjects,
     levels: Object.fromEntries(
-      Object.entries(levelEntries).map(([key, value]) => [key, stringProperty(value, "")]),
+      Object.entries(levelEntries).map(([key, value]) => [key, readStringLiteral(value)]),
     ),
   };
 }
